@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>GreenRoute 🌿 | AI-Based Eco Navigation</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      text-align: center;
+      background: #f7fafc;
+    }
+    h2 {
+      margin-top: 15px;
+      color: #2f855a;
+    }
+    #map {
+      height: 70vh;
+      width: 90%;
+      margin: 20px auto;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    #controls {
+      margin: 20px auto;
+    }
+    input, select, button {
+      padding: 6px;
+      margin: 5px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    table {
+      margin: 20px auto;
+      border-collapse: collapse;
+      width: 95%;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 10px;
+      text-align: center;
+    }
+    th {
+      background: #e2f4e9;
+    }
+    .highlight {
+      background: #b7f7b7;
+      font-weight: bold;
+    }
+
+    /* AQI Badge */
+    .aqi-badge {
+      padding: 5px 10px;
+      border-radius: 8px;
+      color: white;
+      font-weight: bold;
+      display: inline-block;
+      min-width: 80px;
+    }
+    .aqi-good { background-color: #4CAF50; }
+    .aqi-moderate { background-color: #FFC107; color: black; }
+    .aqi-unhealthy { background-color: #FF9800; }
+    .aqi-poor { background-color: #F44336; }
+
+    /* ACO summary */
+    #acoSummary {
+      width: 90%;
+      margin: 20px auto;
+      background: #f1f7ef;
+      border-left: 6px solid #2f855a;
+      border-radius: 8px;
+      padding: 15px;
+      text-align: left;
+      display: none;
+    }
+    #acoSummary h3 {
+      margin-top: 0;
+      color: #2f855a;
+    }
+  </style>
+
+  <script src="https://maps.googleapis.com/maps/api/js?key={{MAPS_API_KEY}}&libraries=places,geometry"></script>
+</head>
+<body>
+  <h2>🌿 GreenRoute – AI-Based Eco Navigation</h2>
+
+  <div id="controls">
+    <input id="origin" type="text" placeholder="Enter origin" required>
+    <input id="destination" type="text" placeholder="Enter destination" required>
+    <select id="vehicle">
+      <option value="car">Car</option>
+      <option value="bike">Bike</option>
+      <option value="bus">Bus</option>
+    </select>
+    <select id="fuel">
+      <option value="petrol">Petrol</option>
+      <option value="diesel">Diesel</option>
+      <option value="ev">Electric</option>
+    </select>
+    <button id="findRoute">Compare Routes</button>
+  </div>
+
+  <div id="map"></div>
+
+  <!-- ACO Summary Card -->
+  <div id="acoSummary">
+    <h3>🐜 Ant Colony Optimization (ACO) Result</h3>
+    <p><b>Optimized Distance:</b> <span id="acoDistance"></span> km</p>
+    <p><b>Emission:</b> <span id="acoEmission"></span> kg CO₂</p>
+    <p><b>Status:</b> <span id="acoStatus"></span></p>
+  </div>
+
+  <!-- Results Table -->
+  <table id="routeTable" style="display:none;">
+    <thead>
+      <tr>
+        <th>Route</th>
+        <th>Distance (km)</th>
+        <th>Duration (min)</th>
+        <th>Traffic Delay (min)</th>
+        <th>Elevation Gain (m)</th>
+        <th>Emission (RF)</th>
+        <th>Emission (LGBM)</th>
+        <th>Air Quality (AQI)</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    let map, polylines = [];
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 6,
+        center: { lat: 20.5937, lng: 78.9629 }, // India center
+      });
+    }
+
+    function getAqiBadge(aqi, category) {
+      if (aqi === null || aqi === undefined) return '<span class="aqi-badge aqi-poor">N/A</span>';
+      let cls = "aqi-good";
+      if (aqi >= 0 && aqi <= 50) cls = "aqi-good";
+      else if (aqi <= 100) cls = "aqi-moderate";
+      else if (aqi <= 200) cls = "aqi-unhealthy";
+      else cls = "aqi-poor";
+      return `<span class="aqi-badge ${cls}">${aqi} (${category || ''})</span>`;
+    }
+
+    document.getElementById("findRoute").onclick = async function() {
+      const origin = document.getElementById("origin").value;
+      const destination = document.getElementById("destination").value;
+      const vehicle = document.getElementById("vehicle").value;
+      const fuel = document.getElementById("fuel").value;
+
+      if (!origin || !destination) {
+        alert("Please enter both origin and destination");
+        return;
+      }
+
+      const res = await fetch(`/compare_routes?origin=${origin}&destination=${destination}&vehicle=${vehicle}&fuel=${fuel}`);
+      const data = await res.json();
+      console.log(data);
+
+      if (!data.routes || data.routes.length === 0) {
+        alert("No routes found. Please try again.");
+        return;
+      }
+
+      // Clear previous map polylines
+      polylines.forEach(p => p.setMap(null));
+      polylines = [];
+
+      const bounds = new google.maps.LatLngBounds();
+      const tbody = document.querySelector("#routeTable tbody");
+      tbody.innerHTML = "";
+
+      data.routes.forEach(r => {
+        const path = google.maps.geometry.encoding.decodePath(r.polyline);
+        const color = (r.route_index === data.best_route.route_index) ? "#00b300" : "#666";
+        const line = new google.maps.Polyline({
+          path: path,
+          strokeColor: color,
+          strokeOpacity: 0.8,
+          strokeWeight: 5,
+          map: map
+        });
+        polylines.push(line);
+        path.forEach(pt => bounds.extend(pt));
+
+        const row = document.createElement("tr");
+        if (r.route_index === data.best_route.route_index) row.classList.add("highlight");
+        row.innerHTML = `
+          <td>${r.route_index === data.best_route.route_index ? "✅ Best ML Route" : "Route " + r.route_index}</td>
+          <td>${r.distance_km}</td>
+          <td>${r.duration_min}</td>
+          <td>${(r.duration_traffic_min - r.duration_min).toFixed(1)}</td>
+          <td>${r.elevation_gain_m}</td>
+          <td>${r.rf_emission} kg</td>
+          <td>${r.lgbm_emission} kg</td>
+          <td>${getAqiBadge(r.aqi, r.aqi_category)}</td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      map.fitBounds(bounds);
+      document.getElementById("routeTable").style.display = "table";
+
+      // ---- ACO Route Rendering ----
+      const aco = data.aco_route;
+      const acoDiv = document.getElementById("acoSummary");
+
+      if (aco && aco.polyline && aco.polyline.length > 0) {
+        const acoPath = google.maps.geometry.encoding.decodePath(aco.polyline);
+        const acoLine = new google.maps.Polyline({
+          path: acoPath,
+          strokeColor: "#800080", // Purple line for ACO route
+          strokeOpacity: 0.9,
+          strokeWeight: 6,
+          map: map
+        });
+        polylines.push(acoLine);
+        acoPath.forEach(pt => bounds.extend(pt));
+        map.fitBounds(bounds);
+
+        acoDiv.style.display = "block";
+        document.getElementById("acoDistance").innerText = aco.distance_km ?? "N/A";
+        document.getElementById("acoEmission").innerText = aco.emission_kgco2 ?? "N/A";
+        document.getElementById("acoStatus").innerText = data.aco_better_than_lgbm
+          ? "ACO found a more eco-friendly route 🌍"
+          : "ACO route emission ≈ ML best route";
+      } else {
+        acoDiv.style.display = "block";
+        document.getElementById("acoDistance").innerText = "N/A";
+        document.getElementById("acoEmission").innerText = "N/A";
+        document.getElementById("acoStatus").innerText = "ACO could not find an optimized route for this region.";
+      }
+    };
+
+    window.onload = initMap;
+  </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+Flask
+requests
+python-dotenv
+polyline
+gunicorn
+pandas
+joblib
