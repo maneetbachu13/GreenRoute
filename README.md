@@ -40,24 +40,3 @@ To develop an intelligent routing system that reduces carbon emissions by recomm
 | Frontend | HTML, CSS, Jinja (via FastAPI templates) |
 
 ---
-
-## 🗂️ Project Structure
-
-GreenRoute/
-│
-├── app.py # Main FastAPI application
-├── train_model.py # Model training script
-├── utils.py # Helper functions (data handling, emissions)
-│
-├── templates/ # HTML templates for frontend
-│ └── index.html
-│
-├── data/
-│ ├── training_data.csv # Dataset used for model training
-│ ├── emission_rf.pkl # Random Forest trained model
-│ └── emission_lgbm.pkl # LightGBM trained model
-│
-├── requirements.txt # Dependencies list
-├── Dockerfile # For container deployment
-├── .env # Environment variables (not uploaded)
-├── .gitignore # Ignore unnecessary files
